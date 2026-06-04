@@ -16,6 +16,8 @@ cleaner path for:
   - Read-only snapshot collector
   - Captures BIOS, CPU, memory, storage, network, PCIe, USB, and optional BMC
     evidence
+  - Builds a structured `info_index` and richer platform snapshot for AI review
+    and report generation
   - Writes raw command output and a structured `evidence.json`
 
 - `dqa_function_quick_check.py`
@@ -133,6 +135,24 @@ Good first-pass coverage:
 - `3.08` Buttons / indicators related software-side context is still manual
 - `3.09` / `3.10` / `3.17` BMC or sensor evidence when `ipmitool` is present
 - `4.01` RTC still needs a longer-duration procedure outside these scripts
+
+## Structured Info Coverage
+
+The collector keeps raw command logs, but the main value is the structured JSON
+snapshot. Current info sections include:
+
+- system identity, OS, kernel, time, failed services, and boot command line
+- DMI system, BIOS, baseboard, chassis, CPU, and memory slot inventory
+- block devices, filesystems, SMART health, NVMe list, and NVMe SMART log
+- physical NIC inventory, driver, firmware, speed, link, addresses, routes, and
+  listening ports
+- PCIe device list, class summary, tree view, and kernel driver lines
+- USB device list
+- BMC sensor summary and FRU fields when `ipmitool` is available
+- boot-health context from journal, dmesg, and RAS tooling
+
+This is intentionally more structured than legacy info logs so later review
+logic can reason over evidence without scraping HTML or plain text.
 
 ## Notes
 

@@ -72,6 +72,11 @@ names are not required for discovery. Configure `network_topology.mode` as
 `configured` only when you want specific cabled ports or loopback pairs to become
 hard requirements for active network checks.
 
+The live collector now writes both raw command logs and structured info sections
+for system, DMI, CPU, memory slots, storage, network, PCIe, USB, BMC, and boot
+health. The `info_index` in `evidence.json` summarizes which sections were
+collected and which legacy info areas are covered.
+
 Use preflight to check required tools before enabling active checks. If a tool is
 missing and you want the runner to install supported packages, add
 `--install-missing`. The runner asks for `Y` confirmation because installation

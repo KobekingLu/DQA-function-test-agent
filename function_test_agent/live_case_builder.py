@@ -27,7 +27,8 @@ def build_latest_live_case(project_root: Path) -> dict[str, Any] | None:
         evidence.get("snapshot", {}).get("hardware", {}).get("cpu_summary", ""),
         "Model name:",
     ) or _first_non_empty_line(evidence.get("snapshot", {}).get("hardware", {}).get("cpu_summary", ""))
-    storage_device = _first_storage_device(evidence)
+    platform_evidence = _platform_evidence(evidence, product_name, bios, os_name, cpu_line)
+    storage_evidence = _storage_evidence(evidence)
     preflight = quick.get("preflight", {})
     preflight_checks = preflight.get("checks", [])
     missing_tools = [
@@ -107,14 +108,14 @@ def build_latest_live_case(project_root: Path) -> dict[str, Any] | None:
         {
             "test_id": "LIVE-001",
             "status": "PASS",
-            "evidence": f"{product_name}, BIOS {bios}, {os_name}, {cpu_line}",
+            "evidence": platform_evidence,
             "log_reference": _relative_to_root(project_root, evidence_path),
             "note": "",
         },
         {
             "test_id": "LIVE-002",
             "status": "PASS",
-            "evidence": storage_device,
+            "evidence": storage_evidence,
             "log_reference": _relative_to_root(project_root, evidence_path),
             "note": "",
         },
@@ -145,6 +146,35 @@ def build_latest_live_case(project_root: Path) -> dict[str, Any] | None:
     collected_at = evidence.get("collected_at", "")
     source_label = f"Live DUT Evidence ({product_name} / {collected_at})".strip(" /")
     extra_observations = []
+    info_index = evidence.get("info_index", {})
+    if info_index:
+        sections = info_index.get("sections", {})
+        covered_sections = [name for name, covered in sections.items() if covered]
+        extra_observations.append(
+            {
+                "name": "live_info_index",
+                "status": "INFO",
+                "summary": (
+                    f"Structured live info {info_index.get('schema', '')} covered "
+                    f"{len(covered_sections)}/{len(sections)} section(s) with "
+                    f"{info_index.get('command_count', 0)} command(s); "
+                    f"command warnings: {info_index.get('command_warning_count', 0)}; "
+                    f"missing tools: {len(info_index.get('missing_tools', []))}."
+                ),
+                "source": _relative_to_root(project_root, evidence_path),
+                "scope_note": "Agent used this index to summarize live DUT evidence coverage.",
+            }
+        )
+    for warning in evidence.get("snapshot", {}).get("info_quality", {}).get("warnings", []):
+        extra_observations.append(
+            {
+                "name": "info_quality_warning",
+                "status": "INFO",
+                "summary": warning,
+                "source": _relative_to_root(project_root, evidence_path),
+                "scope_note": "Collected as evidence context. Review before treating it as release-blocking.",
+            }
+        )
     for active_test in active_tests:
         extra_observations.append(
             {
@@ -226,6 +256,58 @@ def _lscpu_value(text: str, label: str) -> str:
     return ""
 
 
+def _platform_evidence(
+    evidence: dict[str, Any],
+    product_name: str,
+    bios: str,
+    os_name: str,
+    cpu_line: str,
+) -> str:
+    cpu = evidence.get("snapshot", {}).get("cpu", {})
+    memory = evidence.get("snapshot", {}).get("memory", {})
+    pcie = evidence.get("snapshot", {}).get("pcie", {})
+    topology = (
+        f"{cpu.get('socket_count')} socket(s), "
+        f"{cpu.get('cores_per_socket')} cores/socket, "
+        f"{cpu.get('threads_per_core')} threads/core, "
+        f"{cpu.get('cpu_count')} logical CPUs"
+    )
+    memory_slots = (
+        f"memory slots populated {memory.get('populated_slot_count')}/"
+        f"{memory.get('slot_count')}"
+    )
+    pcie_summary = _format_count_summary(pcie.get("class_summary", {}))
+    return (
+        f"{product_name}, BIOS {bios}, {os_name}, {cpu_line}; "
+        f"CPU topology: {topology}; {memory_slots}; "
+        f"PCIe devices: {pcie.get('device_count', 0)} {pcie_summary}"
+    )
+
+
+def _storage_evidence(evidence: dict[str, Any]) -> str:
+    storage = evidence.get("snapshot", {}).get("storage", {})
+    devices = storage.get("block_devices", [])
+    health_checks = storage.get("health_checks", [])
+    nvme_health = storage.get("nvme_health", [])
+    passed = [
+        item for item in health_checks
+        if str(item.get("health_result", "")).upper() in {"PASSED", "OK"}
+    ]
+    first_device = _first_storage_device(evidence)
+    return (
+        f"{len(devices)} disk device(s) detected; "
+        f"SMART health passed {len(passed)}/{len(health_checks)}; "
+        f"NVMe SMART logs parsed: {len(nvme_health)}; "
+        f"first device: {first_device}"
+    )
+
+
+def _format_count_summary(summary: dict[str, Any]) -> str:
+    if not summary:
+        return "no class summary"
+    return ", ".join(f"{key}={summary[key]}" for key in sorted(summary))
+
+
 def _first_storage_device(evidence: dict[str, Any]) -> str:
     devices = evidence.get("snapshot", {}).get("storage", {}).get("block_devices", [])
     health_checks = evidence.get("snapshot", {}).get("storage", {}).get("health_checks", [])
@@ -281,6 +363,13 @@ def _network_note(missing_tools: list[str], blocked_interfaces: list[dict[str, A
 def _bmc_evidence(bmc: dict[str, Any]) -> str:
     if not bmc.get("supported"):
         return "BMC sensor or FRU evidence was not collected."
+    sensor_summary = bmc.get("sensor_summary", {})
+    if sensor_summary:
+        return (
+            f"ipmitool sensors: {sensor_summary.get('sensor_count', 0)}; "
+            f"non-OK/discrete attention items: {sensor_summary.get('non_ok_count', 0)}; "
+            f"FRU fields: {len(bmc.get('fru', {}))}."
+        )
     sensor_count = len(bmc.get("sensor_excerpt", []))
     fru_count = len(bmc.get("fru_excerpt", []))
     return f"ipmitool sensor excerpt lines: {sensor_count}; FRU excerpt lines: {fru_count}."
