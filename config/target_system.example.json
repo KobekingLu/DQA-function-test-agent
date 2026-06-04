@@ -1,0 +1,25 @@
+{
+  "name": "example-dut",
+  "host": "192.0.2.10",
+  "port": 22,
+  "username": "dqa",
+  "password": "replace-me-or-use-ssh-key",
+  "remote_python": "python3",
+  "remote_base_dir": "/tmp/dqa_live_checks",
+  "assume_tools": [],
+  "network_topology": {
+    "loopback_pairs": [
+      [
+        "be1p0",
+        "be1p1"
+      ]
+    ],
+    "external_interfaces": [
+      "ba4p0",
+      "ba5p0"
+    ],
+    "notes": [
+      "Example only. Update interfaces to match the DUT."
+    ]
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "schema_version": "x86unittest.profile.v1",
+  "profile_id": "fwa6083",
+  "product_name": "FWA-6083",
+  "platform": "x86",
+  "owners": {
+    "default": "DQA",
+    "bmc": "DQA",
+    "storage": "DQA",
+    "network": "DQA",
+    "power": "Lab",
+    "firmware": "RD"
+  },
+  "enabled_packs": [
+    "io.inventory",
+    "storage.smoke",
+    "network.link_readiness",
+    "bmc.sensor_fru"
+  ],
+  "network_topology": {
+    "external_interfaces": [
+      "ba4p0",
+      "ba5p0"
+    ],
+    "loopback_pairs": [
+      [
+        "be1p0",
+        "be1p1"
+      ]
+    ]
+  },
+  "storage_topology": {
+    "boot_device_required": true,
+    "smart_required": true,
+    "smoke_test_dir": "/var/tmp"
+  },
+  "tool_assumptions": [],
+  "remote": {
+    "enabled": false,
+    "target_config": "",
+    "note": "Set target_config to config/target_system.local.json when running experiments on an SSH reachable DUT."
+  },
+  "policy": {
+    "block_priorities": [
+      "P0"
+    ],
+    "retest_statuses": [
+      "BLOCKED",
+      "SKIP",
+      "NOT_RUN"
+    ]
+  },
+  "legacy_mapping": {
+    "item_cfg": {
+      "cpu_info": "io.inventory",
+      "ram_info": "io.inventory",
+      "lan_info": "network.link_readiness",
+      "storage_info": "storage.smoke",
+      "usb_info": "io.inventory",
+      "sdr_info": "bmc.sensor_fru"
+    }
+  }
+}

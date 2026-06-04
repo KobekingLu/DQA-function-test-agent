@@ -1,0 +1,3 @@
+issue_id,related_test_id,severity,status,disposition,owner,summary
+BUG-2010,FT-102,Medium,Open,Waived,RD,Minor packet-forwarding instability is known on debug image
+BUG-2011,FT-104,Medium,Open,Investigating,DQA,Telemetry upload sometimes misses collector handshake in busy lab VLAN

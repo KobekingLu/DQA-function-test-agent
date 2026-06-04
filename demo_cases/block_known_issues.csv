@@ -1,0 +1,3 @@
+issue_id,related_test_id,severity,status,disposition,owner,summary
+BUG-3015,FT-201,Critical,Open,Investigating,RD,Platform may hang after repeated AC cycle on current BIOS build
+BUG-3016,FT-202,High,Open,Investigating,DQA,Secure boot check cannot proceed when post-boot handoff does not complete

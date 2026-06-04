@@ -1,0 +1,5 @@
+test_id,feature_area,test_name,priority,expected_result,owner
+FT-001,Login,User login with default credential,P1,Login succeeds and dashboard is visible,DQA
+FT-002,Network,LAN link check on both ports,P1,Both LAN ports link up and pass ping,DQA
+FT-003,Storage,NVMe inventory enumeration,P2,All expected NVMe devices are visible,DQA
+FT-004,Sensor,System sensor event clear check,P2,No unexpected critical sensor event remains,DQA

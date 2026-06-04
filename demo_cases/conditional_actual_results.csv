@@ -1,0 +1,4 @@
+test_id,status,evidence,log_reference,note
+FT-101,PASS,Role switch completed without session drop,logs/login_conditional.log,
+FT-102,FAIL,Packet forwarding dropped two flows during smoke window,logs/network_conditional.log,Known minor instability under debug image
+FT-103,NOT_RUN,,logs/service_conditional.log,Execution window ended before rerun

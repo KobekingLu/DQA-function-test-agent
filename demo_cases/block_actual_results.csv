@@ -1,0 +1,5 @@
+test_id,status,evidence,log_reference,note
+FT-201,FAIL,System failed to boot after second AC cycle,logs/power_block.log,Console stops before OS handoff
+FT-202,BLOCKED,Secure boot menu inaccessible after failure,logs/security_block.log,Blocked by power-cycle failure
+FT-203,PASS,Array rebuild completed in expected time,logs/storage_block.log,
+FT-204,PASS,BMC alert reached monitoring target,logs/monitoring_block.log,

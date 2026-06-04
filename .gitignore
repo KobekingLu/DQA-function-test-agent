@@ -1,0 +1,51 @@
+# Local credentials and machine-specific config
+config/*.local.json
+*.local.json
+.env
+.env.*
+
+# Generated outputs and temporary workspace files
+output/
+.tmp/
+tmp/
+temp/
+
+# Internal evidence, debug packages, and large source material
+Document/
+NeedtoDebug/
+NEW_Script/
+
+# Keep the public helper scripts small; do not publish legacy/internal tool bundles yet.
+Script/*
+!Script/dqa_live_checks/
+!Script/dqa_live_checks/**
+
+# Python cache
+Script/dqa_live_checks/__pycache__/
+__pycache__/
+*.pyc
+*.pyo
+
+# Test logs, reports, archives, and binary payloads
+*.log
+*.zip
+*.7z
+*.tar
+*.tgz
+*.gz
+*.img
+*.iso
+*.bin
+*.exe
+*.dll
+*.so
+*.MOV
+*.mov
+*.mp4
+*.m4a
+*.pptx
+*.docx
+*.xlsx
+*.xls
+*.pdf
+*.msg

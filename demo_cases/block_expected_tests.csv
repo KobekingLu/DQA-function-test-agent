@@ -1,0 +1,5 @@
+test_id,feature_area,test_name,priority,expected_result,owner
+FT-201,Power,AC power cycle boot recovery,P0,System boots successfully after AC power cycle,RD
+FT-202,Security,Secure boot enforcement,P1,Secure boot stays enabled and blocks unsigned image,DQA
+FT-203,Storage,RAID degraded recovery check,P1,Array rebuild completes and data remains accessible,RD
+FT-204,Monitoring,BMC alert forwarding,P2,BMC forwards critical alert to monitoring target,DQA

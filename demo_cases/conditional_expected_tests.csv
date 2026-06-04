@@ -1,0 +1,5 @@
+test_id,feature_area,test_name,priority,expected_result,owner
+FT-101,Login,Admin login with role switch,P1,Role switch succeeds without session drop,DQA
+FT-102,Network,Packet forwarding sanity test,P2,Packet forwarding stays stable for smoke duration,DQA
+FT-103,Service,Service restart resilience,P2,Service restarts cleanly and health check returns green,RD
+FT-104,Telemetry,Telemetry event upload check,P1,Expected event packet is uploaded to collector,DQA

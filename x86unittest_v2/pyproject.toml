@@ -1,0 +1,11 @@
+[project]
+name = "x86unittest-v2"
+version = "0.1.0"
+description = "Profile-driven X86UniTest v2 skeleton"
+requires-python = ">=3.10"
+
+[project.scripts]
+x86uni = "x86unittest.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

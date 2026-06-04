@@ -1,0 +1,5 @@
+test_id,status,evidence,log_reference,note
+FT-001,PASS,Login completed and dashboard rendered,logs/login_ready.log,
+FT-002,PASS,Both LAN ports passed ping and throughput smoke check,logs/network_ready.log,
+FT-003,PASS,Two NVMe devices detected as expected,logs/storage_ready.log,
+FT-004,PASS,Sensor event queue clear after reboot,logs/sensor_ready.log,
