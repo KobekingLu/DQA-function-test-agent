@@ -77,6 +77,23 @@ python Script/dqa_live_checks/dqa_remote_run.py ^
   --preflight-only
 ```
 
+Preflight checks the tools and interfaces needed for the selected active checks.
+If missing packages should be installed, add `--install-missing`; the local
+runner asks for `Y` before the DUT is changed:
+
+```bash
+python Script/dqa_live_checks/dqa_remote_run.py ^
+  --config config/target_system.local.json ^
+  --preflight-only ^
+  --install-missing
+```
+
+Installation requires DUT network or package-mirror access and root or
+passwordless sudo permission. Use `--yes` only for automation after accepting
+that risk. Automatic install currently targets Ubuntu/Debian-like systems with
+`apt-get`; on other Linux distributions, install missing tools manually and
+rerun preflight.
+
 ## Output Shape
 
 Each run creates a timestamped folder under `output/` by default.

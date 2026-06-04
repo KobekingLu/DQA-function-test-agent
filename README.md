@@ -60,6 +60,24 @@ The runner uploads small Python scripts to the DUT, collects read-only evidence,
 downloads JSON artifacts under `output/remote_runs/`, and lets `python demo.py`
 include the latest live DUT review in the bilingual report.
 
+Use preflight to check required tools before enabling active checks. If a tool is
+missing and you want the runner to install supported packages, add
+`--install-missing`. The runner asks for `Y` confirmation because installation
+requires DUT network or package-mirror access and root or passwordless sudo
+permission:
+
+```bash
+python Script/dqa_live_checks/dqa_remote_run.py \
+  --config config/target_system.local.json \
+  --preflight-only \
+  --install-missing
+```
+
+For automation, add `--yes` only when you already accept the DUT package changes.
+Automatic install is currently intended for Ubuntu/Debian-like systems with
+`apt-get`. Evidence collection and preflight are Linux-oriented and can still run
+on other distributions when the required commands are available.
+
 ## Quick Start: X86UniTest v2 Skeleton
 
 From the v2 source directory:

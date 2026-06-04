@@ -31,7 +31,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--install-missing",
         action="store_true",
-        help="Install missing packages for requested checks by using apt-get.",
+        help="Install missing packages for requested checks when the DUT OS supports it.",
+    )
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Confirm package installation without an interactive prompt.",
     )
     parser.add_argument(
         "--memory-seconds",
@@ -86,11 +91,18 @@ def main() -> int:
     logs_dir.mkdir(parents=True, exist_ok=True)
 
     requested_tools = collect_required_tools(args)
-    preflight = run_preflight(args, logs_dir, requested_tools)
+    os_support = detect_os_support()
+    preflight = run_preflight(args, logs_dir, requested_tools, os_support)
     install_result = None
     if args.install_missing and preflight["missing_tools"]:
-        install_result = install_missing_tools(preflight["missing_tools"], logs_dir)
-        preflight = run_preflight(args, logs_dir, requested_tools)
+        if args.yes or confirm_install(preflight["missing_tools"], os_support):
+            install_result = install_missing_tools(preflight["missing_tools"], logs_dir, os_support)
+            preflight = run_preflight(args, logs_dir, requested_tools, os_support)
+        else:
+            install_result = {
+                "status": "SKIP",
+                "message": "Package installation was not confirmed by the operator.",
+            }
 
     results: dict[str, Any] = {
         "label": args.label,
@@ -175,6 +187,7 @@ def describe_requested_checks(args: argparse.Namespace) -> dict[str, Any]:
         "external_interfaces": args.external_interface,
         "preflight_only": args.preflight_only,
         "install_missing": args.install_missing,
+        "yes": args.yes,
     }
 
 
@@ -182,6 +195,7 @@ def run_preflight(
     args: argparse.Namespace,
     logs_dir: Path,
     requested_tools: dict[str, str],
+    os_support: dict[str, Any],
 ) -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
     missing_tools: list[dict[str, str]] = []
@@ -246,19 +260,111 @@ def run_preflight(
     notes = []
     if missing_tools:
         notes.append("Missing tools were detected. Install them or skip the related active checks.")
+    if missing_tools and not os_support.get("install_supported"):
+        notes.append(os_support.get("install_message", "Automatic install is not supported on this OS."))
     if args.loopback_pair:
         notes.append("Loopback iperf test will temporarily add and remove IPv4 addresses on the loopback pair when active checks are enabled.")
 
     return {
         "overall_status": overall_status(checks),
+        "os_support": os_support,
         "missing_tools": missing_tools,
         "checks": checks,
         "notes": notes,
     }
 
 
-def install_missing_tools(missing_tools: list[dict[str, str]], logs_dir: Path) -> dict[str, Any]:
+def detect_os_support() -> dict[str, Any]:
+    os_release = parse_os_release(Path("/etc/os-release"))
+    os_id = os_release.get("ID", "").lower()
+    id_like = {
+        item.lower()
+        for item in os_release.get("ID_LIKE", "").replace(",", " ").split()
+        if item.strip()
+    }
+    apt_available = shutil.which("apt-get") is not None
+    apt_family = os_id in {"ubuntu", "debian"} or bool(id_like & {"ubuntu", "debian"})
+    install_supported = apt_available and apt_family
+
+    if install_supported:
+        install_message = (
+            "Automatic install is supported through apt-get. "
+            "The DUT still needs network or mirror access and sudo/root permission."
+        )
+    elif apt_available:
+        install_message = (
+            "apt-get exists, but this OS is not identified as Ubuntu/Debian family. "
+            "Install missing tools manually or validate the package manager first."
+        )
+    else:
+        install_message = (
+            "Automatic install is currently supported only on Ubuntu/Debian-like DUTs "
+            "with apt-get available."
+        )
+
+    return {
+        "pretty_name": os_release.get("PRETTY_NAME", "Unknown Linux"),
+        "id": os_id or "unknown",
+        "id_like": sorted(id_like),
+        "package_manager": "apt-get" if apt_available else "",
+        "install_supported": install_supported,
+        "install_message": install_message,
+    }
+
+
+def parse_os_release(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+
+    result: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        result[key] = value.strip().strip('"')
+    return result
+
+
+def confirm_install(missing_tools: list[dict[str, str]], os_support: dict[str, Any]) -> bool:
+    tools = ", ".join(item["tool"] for item in missing_tools)
+    print()
+    print("Missing tools detected: " + tools)
+    print(os_support.get("install_message", "Automatic install may not be supported."))
+    print("Installing packages changes the DUT and requires network or mirror access.")
+    print("It may also require root or passwordless sudo permission.")
+    try:
+        answer = input("Install missing packages now? Type Y to continue: ").strip()
+    except EOFError:
+        return False
+    return answer.upper() == "Y"
+
+
+def package_manager_command(args: list[str]) -> list[str]:
+    command = ["apt-get", *args]
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        return command
+    if shutil.which("sudo"):
+        return ["sudo", "-n", *command]
+    return command
+
+
+def install_missing_tools(
+    missing_tools: list[dict[str, str]],
+    logs_dir: Path,
+    os_support: dict[str, Any],
+) -> dict[str, Any]:
     log_path = logs_dir / "install_missing.log"
+    if not os_support.get("install_supported"):
+        message = os_support.get("install_message", "Automatic install is not supported on this OS.")
+        log_path.write_text(message + "\n", encoding="utf-8")
+        return {
+            "status": "SKIP",
+            "message": message,
+            "os_support": os_support,
+            "log_file": str(log_path),
+        }
+
     tools = sorted(
         {
             item["tool"]
@@ -275,7 +381,7 @@ def install_missing_tools(missing_tools: list[dict[str, str]], logs_dir: Path) -
         }
 
     steps: list[dict[str, Any]] = []
-    update_cmd = ["apt-get", "update"]
+    update_cmd = package_manager_command(["update"])
     update_result = subprocess.run(update_cmd, capture_output=True, text=True)
     steps.append(
         {
@@ -289,11 +395,11 @@ def install_missing_tools(missing_tools: list[dict[str, str]], logs_dir: Path) -
         log_path.write_text(format_install_log(steps), encoding="utf-8")
         return {
             "status": "FAIL",
-            "message": "apt-get update failed",
+            "message": "apt-get update failed. Check DUT network, proxy, and sudo/root permission.",
             "log_file": str(log_path),
         }
 
-    install_cmd = ["apt-get", "install", "-y", *tools]
+    install_cmd = package_manager_command(["install", "-y", *tools])
     install_result = subprocess.run(install_cmd, capture_output=True, text=True)
     steps.append(
         {
@@ -306,7 +412,7 @@ def install_missing_tools(missing_tools: list[dict[str, str]], logs_dir: Path) -
     log_path.write_text(format_install_log(steps), encoding="utf-8")
     return {
         "status": "PASS" if install_result.returncode == 0 else "FAIL",
-        "message": "Installed missing packages" if install_result.returncode == 0 else "apt-get install failed",
+        "message": "Installed missing packages" if install_result.returncode == 0 else "apt-get install failed. Check DUT network, proxy, and sudo/root permission.",
         "packages": tools,
         "log_file": str(log_path),
     }

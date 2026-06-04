@@ -36,7 +36,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--install-missing",
         action="store_true",
-        help="Allow the remote quick check to install missing apt packages.",
+        help="Allow the remote quick check to install missing packages after confirmation.",
+    )
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Confirm remote package installation without an interactive prompt.",
     )
     parser.add_argument(
         "--memory-seconds",
@@ -78,6 +83,11 @@ def main() -> int:
     args = parse_args()
     config_path = Path(args.config)
     config = json.loads(config_path.read_text(encoding="utf-8-sig"))
+    if args.install_missing and not args.yes:
+        if not confirm_remote_install(args, config):
+            print("Remote package installation was not confirmed. Aborting.")
+            return 2
+
     label = sanitize_label(config.get("name") or config.get("host") or "dut")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -131,6 +141,7 @@ def main() -> int:
                 parts.append("--preflight-only")
             if args.install_missing:
                 parts.append("--install-missing")
+                parts.append("--yes")
             if args.memory_seconds > 0:
                 parts.append(f"--memory-seconds {int(args.memory_seconds)}")
             if args.storage_dir:
@@ -180,6 +191,38 @@ def main() -> int:
     finally:
         sftp.close()
         ssh.close()
+
+
+def confirm_remote_install(args: argparse.Namespace, config: dict[str, Any]) -> bool:
+    packages = potential_install_packages(args, config)
+    package_text = ", ".join(packages) if packages else "requested active-check packages"
+    host = config.get("host", "unknown-host")
+
+    print()
+    print(f"Remote package installation requested for DUT {host}.")
+    print(f"Potential packages: {package_text}")
+    print("This requires the DUT to have network or package-mirror access.")
+    print("It also requires root or passwordless sudo permission on the DUT.")
+    print("Current automatic install support is intended for Ubuntu/Debian-like systems with apt-get.")
+    try:
+        answer = input("Install missing packages on the DUT if preflight detects gaps? Type Y to continue: ")
+    except EOFError:
+        return False
+    return answer.strip().upper() == "Y"
+
+
+def potential_install_packages(args: argparse.Namespace, config: dict[str, Any]) -> list[str]:
+    packages: set[str] = set()
+    topology = config.get("network_topology", {})
+
+    if args.memory_seconds > 0:
+        packages.add("stress-ng")
+    if args.network_server or topology.get("loopback_pairs"):
+        packages.add("iperf3")
+    if topology.get("loopback_pairs") or topology.get("external_interfaces"):
+        packages.add("ethtool")
+
+    return sorted(packages)
 
 
 def exec_remote(ssh: paramiko.SSHClient, command: str, timeout: int = 120) -> dict[str, Any]:
