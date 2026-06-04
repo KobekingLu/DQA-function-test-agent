@@ -40,8 +40,13 @@ Run directly on the Linux DUT after SSH login:
 
 ```bash
 python3 dqa_function_collect.py --label sky-721e3-evt
+python3 dqa_function_quick_check.py --label sky-721e3-evt --preflight-only
 python3 dqa_function_quick_check.py --label sky-721e3-evt --memory-seconds 300 --storage-dir /var/tmp
 ```
+
+The local `preflight-only` run automatically inventories physical network
+interfaces. You do not need to provide interface names just to discover NICs,
+link state, speed, IPv4 addresses, or the default-route interface.
 
 If you have an iperf3 server:
 
@@ -94,6 +99,11 @@ that risk. Automatic install currently targets Ubuntu/Debian-like systems with
 `apt-get`; on other Linux distributions, install missing tools manually and
 rerun preflight.
 
+By default the remote runner also uses automatic network inventory. To make
+specific interface names or loopback pairs hard requirements, set
+`network_topology.mode` to `configured` in the local target config or pass
+`--use-configured-network-topology`.
+
 ## Output Shape
 
 Each run creates a timestamped folder under `output/` by default.
@@ -136,7 +146,8 @@ Good first-pass coverage:
 - Real credentials should live in `config/*.local.json`, which is ignored by git.
 - If a command is usable on the DUT but not visible in non-interactive SSH
   discovery, you can add it to `assume_tools` in the target config.
-- You can also record DUT-specific cabling or port roles in `network_topology`
-  inside the target config so the test setup is explicit.
+- You can record DUT-specific cabling or port roles in `network_topology`
+  inside the target config when active loopback or external-port checks need
+  known physical wiring. Discovery-only preflight does not require this.
 - Loopback iperf temporarily adds and removes IPv4 addresses on the specified
   pair. If either interface already has IPv4 configured, the test is skipped.

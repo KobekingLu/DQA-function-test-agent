@@ -38,11 +38,17 @@ def build_latest_live_case(project_root: Path) -> dict[str, Any] | None:
     interface_checks = [
         item for item in preflight_checks if item.get("name", "").startswith("interface_")
     ]
+    network_inventory = _first_named_check(preflight_checks, "network_inventory")
     blocked_interfaces = [
         item for item in interface_checks if item.get("status", "").upper() == "BLOCKED"
     ]
     network_status = "BLOCKED" if missing_tools or blocked_interfaces else "PASS"
-    network_evidence = _network_evidence(evidence, interface_checks, missing_tools)
+    network_evidence = _network_evidence(
+        evidence,
+        interface_checks,
+        missing_tools,
+        network_inventory,
+    )
     bmc = evidence.get("snapshot", {}).get("bmc", {})
     bmc_status = "PASS" if bmc.get("supported") else "SKIP"
     usb_hint = _join_messages(
@@ -163,7 +169,7 @@ def build_latest_live_case(project_root: Path) -> dict[str, Any] | None:
         "scope_notes": [
             "This live review is generated from the latest SSH-collected DUT evidence.",
             "The current scope focuses on read-only platform evidence and setup readiness before active stress or bandwidth testing.",
-            "Network interface expectations come from the local target config. If the configured names do not match the DUT, update network_topology and rerun preflight.",
+            "Network inventory is auto-discovered by default. Configure network_topology only when specific cabled ports or loopback pairs must become hard requirements.",
             "Active checks such as iperf3, memory stress, or storage smoke should be enabled only after preflight is clean.",
         ],
         "extra_observations": extra_observations,
@@ -235,6 +241,7 @@ def _network_evidence(
     evidence: dict[str, Any],
     interface_checks: list[dict[str, Any]],
     missing_tools: list[str],
+    network_inventory: dict[str, Any],
 ) -> str:
     detected = evidence.get("snapshot", {}).get("network", {}).get("interfaces", [])
     detected_summary = ", ".join(_detected_iface_summary(item) for item in detected[:8])
@@ -244,6 +251,8 @@ def _network_evidence(
     )
 
     parts = []
+    if network_inventory:
+        parts.append(network_inventory.get("message", "Network inventory was collected."))
     if detected_summary:
         parts.append(f"Detected interfaces: {detected_summary}.")
     if configured_summary:
@@ -305,6 +314,13 @@ def _join_messages(messages: list[str]) -> str:
 
 def _first_test(quick: dict[str, Any], name: str) -> dict[str, Any]:
     for item in quick.get("tests", []):
+        if item.get("name") == name:
+            return item
+    return {}
+
+
+def _first_named_check(checks: list[dict[str, Any]], name: str) -> dict[str, Any]:
+    for item in checks:
         if item.get("name") == name:
             return item
     return {}

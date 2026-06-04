@@ -80,6 +80,19 @@ def parse_args() -> argparse.Namespace:
         default=[],
         help="Interface that should be linked to the external network.",
     )
+    parser.add_argument(
+        "--auto-network",
+        dest="auto_network",
+        action="store_true",
+        default=True,
+        help="Automatically inventory physical network interfaces during preflight.",
+    )
+    parser.add_argument(
+        "--no-auto-network",
+        dest="auto_network",
+        action="store_false",
+        help="Disable automatic network inventory.",
+    )
     return parser.parse_args()
 
 
@@ -185,6 +198,7 @@ def describe_requested_checks(args: argparse.Namespace) -> dict[str, Any]:
         "network_seconds": args.network_seconds,
         "loopback_pairs": args.loopback_pair,
         "external_interfaces": args.external_interface,
+        "auto_network": args.auto_network,
         "preflight_only": args.preflight_only,
         "install_missing": args.install_missing,
         "yes": args.yes,
@@ -212,6 +226,9 @@ def run_preflight(
         checks.append(check)
         if not present:
             missing_tools.append({"tool": tool_name, "install_hint": install_hint})
+
+    if args.auto_network:
+        checks.append(discover_network_inventory(logs_dir))
 
     for iface in args.external_interface:
         checks.append(
@@ -262,6 +279,8 @@ def run_preflight(
         notes.append("Missing tools were detected. Install them or skip the related active checks.")
     if missing_tools and not os_support.get("install_supported"):
         notes.append(os_support.get("install_message", "Automatic install is not supported on this OS."))
+    if args.auto_network:
+        notes.append("Network inventory was auto-discovered from the DUT. Configure explicit pairs only for cabled active checks.")
     if args.loopback_pair:
         notes.append("Loopback iperf test will temporarily add and remove IPv4 addresses on the loopback pair when active checks are enabled.")
 
@@ -416,6 +435,94 @@ def install_missing_tools(
         "packages": tools,
         "log_file": str(log_path),
     }
+
+
+def discover_network_inventory(logs_dir: Path) -> dict[str, Any]:
+    log_path = logs_dir / "preflight_network_inventory.json"
+    interfaces = []
+    default_interfaces = detect_default_route_interfaces()
+    base = Path("/sys/class/net")
+
+    if base.exists():
+        for iface_path in sorted(base.iterdir(), key=lambda item: item.name):
+            iface = iface_path.name
+            if iface == "lo":
+                continue
+            interface_type = "physical" if (iface_path / "device").exists() else "virtual"
+            carrier_text = read_file_text(iface_path / "carrier").strip()
+            speed_text = read_file_text(iface_path / "speed").strip()
+            speed_mbps = int(speed_text) if speed_text.isdigit() and int(speed_text) >= 0 else None
+            addresses = list_ipv4_addresses(iface)
+            interfaces.append(
+                {
+                    "interface": iface,
+                    "type": interface_type,
+                    "operstate": read_file_text(iface_path / "operstate").strip() or "unknown",
+                    "carrier": carrier_text,
+                    "link_detected": carrier_text == "1",
+                    "speed_mbps": speed_mbps,
+                    "mac": read_file_text(iface_path / "address").strip(),
+                    "driver": resolve_driver_name(iface_path),
+                    "ipv4_addresses": addresses,
+                    "is_default_route": iface in default_interfaces,
+                }
+            )
+
+    physical = [item for item in interfaces if item["type"] == "physical"]
+    active = [item for item in physical if item["link_detected"] or item["ipv4_addresses"]]
+    log_path.write_text(
+        json.dumps(
+            {
+                "default_route_interfaces": default_interfaces,
+                "interfaces": interfaces,
+            },
+            indent=2,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    if not physical:
+        return {
+            "name": "network_inventory",
+            "status": "BLOCKED",
+            "message": "No physical network interface was discovered.",
+            "interfaces": interfaces,
+            "log_file": str(log_path),
+        }
+
+    default_text = ", ".join(default_interfaces) if default_interfaces else "none"
+    return {
+        "name": "network_inventory",
+        "status": "PASS",
+        "message": (
+            f"Discovered {len(physical)} physical interface(s); "
+            f"{len(active)} currently linked or addressed; default route interface(s): {default_text}."
+        ),
+        "interfaces": interfaces,
+        "default_route_interfaces": default_interfaces,
+        "log_file": str(log_path),
+    }
+
+
+def detect_default_route_interfaces() -> list[str]:
+    output = run_command_text("ip route show default")
+    interfaces = []
+    for line in output.splitlines():
+        match = re.search(r"\bdev\s+(\S+)", line)
+        if match:
+            interfaces.append(match.group(1))
+    return sorted(set(interfaces))
+
+
+def resolve_driver_name(iface_path: Path) -> str:
+    driver_path = iface_path / "device" / "driver"
+    try:
+        if driver_path.exists():
+            return driver_path.resolve().name
+    except OSError:
+        return ""
+    return ""
 
 
 def check_interface_readiness(

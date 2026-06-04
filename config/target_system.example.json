@@ -8,18 +8,12 @@
   "remote_base_dir": "/tmp/dqa_live_checks",
   "assume_tools": [],
   "network_topology": {
-    "loopback_pairs": [
-      [
-        "be1p0",
-        "be1p1"
-      ]
-    ],
-    "external_interfaces": [
-      "ba4p0",
-      "ba5p0"
-    ],
+    "mode": "auto",
+    "loopback_pairs": [],
+    "external_interfaces": [],
     "notes": [
-      "Example only. Update interfaces to match the DUT."
+      "Auto mode inventories physical NICs without requiring manual interface names.",
+      "Use mode=configured only when cabling and loopback pairs are known."
     ]
-  ]
+  }
 }

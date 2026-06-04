@@ -72,6 +72,11 @@ def parse_args() -> argparse.Namespace:
         help="iperf3 duration for the remote quick check.",
     )
     parser.add_argument(
+        "--use-configured-network-topology",
+        action="store_true",
+        help="Use network_topology loopback/external interfaces from the config as hard preflight requirements.",
+    )
+    parser.add_argument(
         "--local-output-dir",
         default="output/remote_runs",
         help="Base local output directory for downloaded DUT artifacts.",
@@ -137,6 +142,7 @@ def main() -> int:
             parts = [f"{shlex.quote(remote_python)} dqa_function_quick_check.py"]
             parts.append(f"--label {shlex.quote(label)}")
             parts.append(f"--output-dir {shlex.quote('run_output')}")
+            parts.append("--auto-network")
             if args.preflight_only:
                 parts.append("--preflight-only")
             if args.install_missing:
@@ -151,13 +157,15 @@ def main() -> int:
                 parts.append(f"--network-server {shlex.quote(args.network_server)}")
                 parts.append(f"--network-seconds {int(args.network_seconds)}")
             topology = config.get("network_topology", {})
-            for pair in topology.get("loopback_pairs", []):
-                if len(pair) == 2:
-                    parts.append(
-                        f"--loopback-pair {shlex.quote(str(pair[0]))} {shlex.quote(str(pair[1]))}"
-                    )
-            for iface in topology.get("external_interfaces", []):
-                parts.append(f"--external-interface {shlex.quote(str(iface))}")
+            use_configured_topology = should_use_configured_network_topology(args, config)
+            if use_configured_topology:
+                for pair in topology.get("loopback_pairs", []):
+                    if len(pair) == 2:
+                        parts.append(
+                            f"--loopback-pair {shlex.quote(str(pair[0]))} {shlex.quote(str(pair[1]))}"
+                        )
+                for iface in topology.get("external_interfaces", []):
+                    parts.append(f"--external-interface {shlex.quote(str(iface))}")
             remote_quick_cmd = (
                 f"cd {shlex.quote(remote_run_dir)} && " + " ".join(parts)
             )
@@ -179,6 +187,7 @@ def main() -> int:
             "target_name": config.get("name", ""),
             "remote_run_dir": remote_run_dir,
             "local_run_dir": str(local_run_dir),
+            "network_topology_mode": "configured" if should_use_configured_network_topology(args, config) else "auto",
             "collect_returncode": collect_result["returncode"],
             "quick_returncode": None if quick_result is None else quick_result["returncode"],
         }
@@ -214,15 +223,27 @@ def confirm_remote_install(args: argparse.Namespace, config: dict[str, Any]) -> 
 def potential_install_packages(args: argparse.Namespace, config: dict[str, Any]) -> list[str]:
     packages: set[str] = set()
     topology = config.get("network_topology", {})
+    use_configured_topology = should_use_configured_network_topology(args, config)
 
     if args.memory_seconds > 0:
         packages.add("stress-ng")
-    if args.network_server or topology.get("loopback_pairs"):
+    if args.network_server or (use_configured_topology and topology.get("loopback_pairs")):
         packages.add("iperf3")
-    if topology.get("loopback_pairs") or topology.get("external_interfaces"):
+    if use_configured_topology and (
+        topology.get("loopback_pairs") or topology.get("external_interfaces")
+    ):
         packages.add("ethtool")
 
     return sorted(packages)
+
+
+def should_use_configured_network_topology(
+    args: argparse.Namespace,
+    config: dict[str, Any],
+) -> bool:
+    topology = config.get("network_topology", {})
+    mode = str(topology.get("mode", "auto")).lower()
+    return args.use_configured_network_topology or mode in {"configured", "manual", "static"}
 
 
 def exec_remote(ssh: paramiko.SSHClient, command: str, timeout: int = 120) -> dict[str, Any]:

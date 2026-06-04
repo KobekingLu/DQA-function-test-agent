@@ -60,6 +60,18 @@ The runner uploads small Python scripts to the DUT, collects read-only evidence,
 downloads JSON artifacts under `output/remote_runs/`, and lets `python demo.py`
 include the latest live DUT review in the bilingual report.
 
+The same scripts can run directly on the Linux DUT after SSH login:
+
+```bash
+python3 dqa_function_collect.py --label local-dut
+python3 dqa_function_quick_check.py --label local-dut --preflight-only
+```
+
+Network preflight now performs automatic NIC inventory by default, so interface
+names are not required for discovery. Configure `network_topology.mode` as
+`configured` only when you want specific cabled ports or loopback pairs to become
+hard requirements for active network checks.
+
 Use preflight to check required tools before enabling active checks. If a tool is
 missing and you want the runner to install supported packages, add
 `--install-missing`. The runner asks for `Y` confirmation because installation
