@@ -39,6 +39,27 @@ python demo.py
 
 Generated JSON and HTML outputs are written under `output/`.
 
+## Quick Start: SSH DUT Evidence
+
+Create a git-ignored local target config from the example:
+
+```bash
+cp config/target_system.example.json config/target_system.local.json
+```
+
+Update `config/target_system.local.json` with the DUT host, username, and lab-only
+credential. Then run the safest remote check first:
+
+```bash
+python Script/dqa_live_checks/dqa_remote_run.py \
+  --config config/target_system.local.json \
+  --preflight-only
+```
+
+The runner uploads small Python scripts to the DUT, collects read-only evidence,
+downloads JSON artifacts under `output/remote_runs/`, and lets `python demo.py`
+include the latest live DUT review in the bilingual report.
+
 ## Quick Start: X86UniTest v2 Skeleton
 
 From the v2 source directory:

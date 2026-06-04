@@ -77,7 +77,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     config_path = Path(args.config)
-    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config = json.loads(config_path.read_text(encoding="utf-8-sig"))
     label = sanitize_label(config.get("name") or config.get("host") or "dut")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 

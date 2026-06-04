@@ -28,34 +28,43 @@ def build_latest_live_case(project_root: Path) -> dict[str, Any] | None:
         "Model name:",
     ) or _first_non_empty_line(evidence.get("snapshot", {}).get("hardware", {}).get("cpu_summary", ""))
     storage_device = _first_storage_device(evidence)
-    preflight_checks = {
-        item.get("name", ""): item for item in quick.get("preflight", {}).get("checks", [])
-    }
-
-    ba4 = preflight_checks.get("interface_ba4p0", {})
-    ba5 = preflight_checks.get("interface_ba5p0", {})
-    be0 = preflight_checks.get("interface_be1p0", {})
-    be1 = preflight_checks.get("interface_be1p1", {})
+    preflight = quick.get("preflight", {})
+    preflight_checks = preflight.get("checks", [])
+    missing_tools = [
+        item.get("tool", "")
+        for item in preflight.get("missing_tools", [])
+        if item.get("tool")
+    ]
+    interface_checks = [
+        item for item in preflight_checks if item.get("name", "").startswith("interface_")
+    ]
+    blocked_interfaces = [
+        item for item in interface_checks if item.get("status", "").upper() == "BLOCKED"
+    ]
+    network_status = "BLOCKED" if missing_tools or blocked_interfaces else "PASS"
+    network_evidence = _network_evidence(evidence, interface_checks, missing_tools)
+    bmc = evidence.get("snapshot", {}).get("bmc", {})
+    bmc_status = "PASS" if bmc.get("supported") else "SKIP"
     usb_hint = _join_messages(
         [
             item.get("message", "")
-            for item in quick.get("preflight", {}).get("checks", [])
+            for item in preflight_checks
             if item.get("name") == "usb_cable_hint"
         ]
     )
-    loopback_result = _first_test(quick, "loopback_iperf3_be1p0_be1p1")
+    active_tests = quick.get("tests", [])
 
     expected_tests = [
         {
-            "test_id": "FT-6083-001",
+            "test_id": "LIVE-001",
             "feature_area": "Operating System",
             "test_name": "OS install and platform snapshot",
             "priority": "P1",
-            "expected_result": "Platform identity, BIOS, OS, and CPU evidence match the current FWA-6083 review scope.",
+            "expected_result": "Platform identity, BIOS, OS, and CPU evidence are collected from the live DUT.",
             "owner": "DQA",
         },
         {
-            "test_id": "FT-6083-002",
+            "test_id": "LIVE-002",
             "feature_area": "Storage",
             "test_name": "Boot storage visibility and SMART snapshot",
             "priority": "P1",
@@ -63,23 +72,23 @@ def build_latest_live_case(project_root: Path) -> dict[str, Any] | None:
             "owner": "DQA",
         },
         {
-            "test_id": "FT-6083-003",
+            "test_id": "LIVE-003",
             "feature_area": "Ethernet",
-            "test_name": "I210 management Ethernet link readiness",
-            "priority": "P1",
-            "expected_result": "The current management-side Ethernet path links up and remains reachable for lab use.",
-            "owner": "DQA",
+            "test_name": "Network preflight and interface readiness",
+            "priority": "P2",
+            "expected_result": "Configured network interfaces and required active-check tools are ready for follow-up testing.",
+            "owner": "Lab",
         },
         {
-            "test_id": "FT-6083-005",
+            "test_id": "LIVE-004",
             "feature_area": "BMC",
             "test_name": "BMC sensor and FRU snapshot",
             "priority": "P2",
-            "expected_result": "BMC sensor and FRU queries complete and identify the platform.",
+            "expected_result": "BMC sensor and FRU queries complete when BMC is available on the platform.",
             "owner": "DQA",
         },
         {
-            "test_id": "FT-6083-006",
+            "test_id": "LIVE-005",
             "feature_area": "USB",
             "test_name": "USB readiness and cable sanity",
             "priority": "P2",
@@ -90,38 +99,35 @@ def build_latest_live_case(project_root: Path) -> dict[str, Any] | None:
 
     actual_items = [
         {
-            "test_id": "FT-6083-001",
+            "test_id": "LIVE-001",
             "status": "PASS",
             "evidence": f"{product_name}, BIOS {bios}, {os_name}, {cpu_line}",
             "log_reference": _relative_to_root(project_root, evidence_path),
             "note": "",
         },
         {
-            "test_id": "FT-6083-002",
+            "test_id": "LIVE-002",
             "status": "PASS",
             "evidence": storage_device,
             "log_reference": _relative_to_root(project_root, evidence_path),
             "note": "",
         },
         {
-            "test_id": "FT-6083-003",
-            "status": "PASS",
-            "evidence": (
-                f"ba4p0 { _iface_summary(ba4) }; "
-                f"ba5p0 { _iface_summary(ba5) }"
-            ),
+            "test_id": "LIVE-003",
+            "status": network_status,
+            "evidence": network_evidence,
             "log_reference": _relative_to_root(project_root, quick_path),
-            "note": "This is link-readiness evidence only. Bandwidth, LED, and port-mapping items still need manual lab confirmation.",
+            "note": _network_note(missing_tools, blocked_interfaces),
         },
         {
-            "test_id": "FT-6083-005",
-            "status": "PASS",
-            "evidence": "ipmitool sensor and FRU both completed; platform identity matches FWA-6083N.",
+            "test_id": "LIVE-004",
+            "status": bmc_status,
+            "evidence": _bmc_evidence(bmc),
             "log_reference": _relative_to_root(project_root, evidence_path),
-            "note": "",
+            "note": "" if bmc_status == "PASS" else "BMC evidence was not available from this DUT snapshot.",
         },
         {
-            "test_id": "FT-6083-006",
+            "test_id": "LIVE-005",
             "status": "BLOCKED" if usb_hint else "PASS",
             "evidence": usb_hint or "No repeated USB cable or enumeration warning was detected in preflight.",
             "log_reference": _relative_to_root(project_root, quick_path),
@@ -133,48 +139,37 @@ def build_latest_live_case(project_root: Path) -> dict[str, Any] | None:
     collected_at = evidence.get("collected_at", "")
     source_label = f"Live DUT Evidence ({product_name} / {collected_at})".strip(" /")
     extra_observations = []
-    if loopback_result:
+    for active_test in active_tests:
         extra_observations.append(
             {
-                "name": "X710 loopback smoke on be1p0/be1p1",
-                "status": loopback_result.get("status", "INFO"),
-                "summary": (
-                    "Loopback smoke passed with temporary test IPs on be1p0/be1p1. "
-                    "Keep it as extra connectivity evidence only."
-                    if loopback_result.get("status") == "PASS"
-                    else "Loopback smoke did not complete successfully."
-                ),
+                "name": active_test.get("name", "active_check"),
+                "status": active_test.get("status", "INFO"),
+                "summary": active_test.get("message", "Live quick-check observation."),
                 "source": _relative_to_root(project_root, quick_path),
-                "scope_note": (
-                    "Not part of the current onboard FWA-6083 PRD scope. "
-                    "The PRD lists onboard management Ethernet on Intel I210 and onboard traffic port support as No."
-                ),
+                "scope_note": "Extra live DUT observation captured by the quick-check runner.",
             }
         )
 
     return {
-        "case_id": "fwa6083_live",
+        "case_id": f"{_slugify(product_name)}_live",
         "case_name": f"{product_name} Live DUT Review",
         "source_type": "live_dut",
         "source_label": source_label,
         "role_candidates": {
-            "expected_tests": (
-                "Document\\FWA-6083-Function_Test_Item_Status_V11_01-Oct-2025_Release.xlsx "
-                "(manual rows 13, 19, 20, 39 + PRD BMC scope)"
-            ),
+            "expected_tests": "Generated live DUT smoke-review scope",
             "actual_results": f"{_relative_to_root(project_root, evidence_path)} + {_relative_to_root(project_root, quick_path)}",
             "known_issues": "No linked issue list yet",
         },
         "scope_notes": [
-            "This live review focuses on the current FWA-6083 scope that can be verified without changing the OS image.",
-            "Main mappings come from manual rows 13, 19, 20, and 39 in the current FWA status workbook.",
-            "BMC evidence is kept in scope because the PRD lists onboard AST2600 BMC, hardware monitor, and FRU support.",
-            "The X710 loopback result is kept as an extra observation, not as a main exit item, because the current onboard PRD scope is Intel I210 management Ethernet.",
+            "This live review is generated from the latest SSH-collected DUT evidence.",
+            "The current scope focuses on read-only platform evidence and setup readiness before active stress or bandwidth testing.",
+            "Network interface expectations come from the local target config. If the configured names do not match the DUT, update network_topology and rerun preflight.",
+            "Active checks such as iperf3, memory stress, or storage smoke should be enabled only after preflight is clean.",
         ],
         "extra_observations": extra_observations,
         "parsed": {
             "expected_tests": {
-                "source_sheet": "FWA-6083 current manual/PRD scope with live DUT evidence",
+                "source_sheet": "Live DUT smoke-review scope",
                 "tests": expected_tests,
             },
             "actual_results": {
@@ -184,20 +179,12 @@ def build_latest_live_case(project_root: Path) -> dict[str, Any] | None:
             },
             "known_issues": [],
         },
-        "analysis_overrides": {
-            "recommended_owner": "Lab",
-            "suggested_next_step": "Inspect the USB cable or attached USB path, rerun the USB-related checks, and then refresh the review package.",
-            "decision_reasons": [
-                "Agent detected 1 blocked live DUT item and traced it to repeated USB cable or enumeration warnings.",
-                "Agent kept the X710 loopback result outside the main exit table because the current FWA-6083 onboard scope is the I210 management path.",
-            ],
-            "action_items": [
-                "Check the USB cable or attached USB path and confirm the port wiring.",
-                "Rerun the USB-related checks after the cable path is corrected.",
-                "Keep the current report as valid evidence for the passed OS, storage, I210 Ethernet readiness, and BMC items.",
-                "Handle Ethernet bandwidth, LED, port mapping, PSU removal, fan hot-swap, and RTC as remaining manual checks.",
-            ],
-        },
+        "analysis_overrides": _live_analysis_overrides(
+            missing_tools=missing_tools,
+            blocked_interfaces=blocked_interfaces,
+            usb_hint=usb_hint,
+            quick=quick,
+        ),
     }
 
 
@@ -244,6 +231,61 @@ def _first_storage_device(evidence: dict[str, Any]) -> str:
     return f"{name} ({model}) SMART {result}"
 
 
+def _network_evidence(
+    evidence: dict[str, Any],
+    interface_checks: list[dict[str, Any]],
+    missing_tools: list[str],
+) -> str:
+    detected = evidence.get("snapshot", {}).get("network", {}).get("interfaces", [])
+    detected_summary = ", ".join(_detected_iface_summary(item) for item in detected[:8])
+    configured_summary = ", ".join(
+        f"{item.get('interface', 'unknown')}={item.get('status', 'UNKNOWN')}"
+        for item in interface_checks
+    )
+
+    parts = []
+    if detected_summary:
+        parts.append(f"Detected interfaces: {detected_summary}.")
+    if configured_summary:
+        parts.append(f"Configured preflight: {configured_summary}.")
+    if missing_tools:
+        parts.append(f"Missing active-check tools: {', '.join(missing_tools)}.")
+    return " ".join(parts) or "Network evidence was not collected."
+
+
+def _network_note(missing_tools: list[str], blocked_interfaces: list[dict[str, Any]]) -> str:
+    notes = []
+    if missing_tools:
+        notes.append(
+            "Install missing active-check tools before bandwidth or loopback checks: "
+            + ", ".join(missing_tools)
+        )
+    if blocked_interfaces:
+        names = ", ".join(item.get("interface", "unknown") for item in blocked_interfaces)
+        notes.append(
+            "Configured interface names did not match ready interfaces on the DUT: "
+            + names
+        )
+    return " ".join(notes)
+
+
+def _bmc_evidence(bmc: dict[str, Any]) -> str:
+    if not bmc.get("supported"):
+        return "BMC sensor or FRU evidence was not collected."
+    sensor_count = len(bmc.get("sensor_excerpt", []))
+    fru_count = len(bmc.get("fru_excerpt", []))
+    return f"ipmitool sensor excerpt lines: {sensor_count}; FRU excerpt lines: {fru_count}."
+
+
+def _detected_iface_summary(interface: dict[str, Any]) -> str:
+    name = interface.get("ifname", "unknown")
+    state = interface.get("operstate", "UNKNOWN")
+    addresses = interface.get("addresses") or []
+    ipv4 = [address for address in addresses if "." in address]
+    address_text = "/".join(ipv4[:2]) if ipv4 else "no IPv4"
+    return f"{name}:{state}:{address_text}"
+
+
 def _iface_summary(check: dict[str, Any]) -> str:
     if not check:
         return "not collected"
@@ -266,6 +308,56 @@ def _first_test(quick: dict[str, Any], name: str) -> dict[str, Any]:
         if item.get("name") == name:
             return item
     return {}
+
+
+def _live_analysis_overrides(
+    missing_tools: list[str],
+    blocked_interfaces: list[dict[str, Any]],
+    usb_hint: str,
+    quick: dict[str, Any],
+) -> dict[str, Any]:
+    reasons = []
+    actions = []
+
+    if missing_tools:
+        reasons.append(
+            "Agent found missing DUT tool(s) needed for active checks: "
+            + ", ".join(missing_tools)
+            + "."
+        )
+        actions.append("Install the missing DUT tool(s), then rerun preflight.")
+
+    if blocked_interfaces:
+        names = ", ".join(item.get("interface", "unknown") for item in blocked_interfaces)
+        reasons.append(
+            "Agent could not match configured network interface(s) on the DUT: "
+            + names
+            + "."
+        )
+        actions.append("Update the target config network_topology interface names for this DUT.")
+
+    if usb_hint:
+        reasons.append("Agent detected a USB readiness warning in preflight.")
+        actions.append("Check USB cabling or attached devices, then rerun the USB-related checks.")
+
+    if not reasons:
+        return {}
+
+    if quick.get("requested_checks", {}).get("preflight_only"):
+        actions.append("After preflight is clean, enable one active check at a time.")
+
+    return {
+        "recommended_owner": "Lab",
+        "suggested_next_step": "Fix preflight setup gaps, rerun the SSH live-check flow, and refresh the HTML review package.",
+        "decision_reasons": reasons,
+        "action_items": actions,
+    }
+
+
+def _slugify(value: str) -> str:
+    cleaned = "".join(ch.lower() if ch.isalnum() else "_" for ch in value.strip())
+    cleaned = "_".join(part for part in cleaned.split("_") if part)
+    return cleaned or "live_dut"
 
 
 def _relative_to_root(project_root: Path, path: Path) -> str:
